@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # MongoDB Database
   mongodb:
     image: mongo:7.0
     container_name: cobranza-mongodb
@@ -13,7 +12,6 @@ services:
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
-      - ./mongo-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "27017:27017"
     networks:
@@ -23,10 +21,9 @@ services:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 40s
 
-  # Redis para cache y sesiones
   redis:
     image: redis:7.2-alpine
     container_name: cobranza-redis
@@ -37,83 +34,58 @@ services:
       - redis_data:/data
     networks:
       - cobranza-network
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-cobranza_redis_2024}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-cobranza_redis_2024}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # Backend Application
   cobranza-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: node:18-alpine
     container_name: cobranza-backend
     restart: unless-stopped
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
-      # Base de datos
       MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-cobranza_admin_2024}@mongodb:27017/cobranza_ai?authSource=admin
-      REDIS_URL: redis://:${REDIS_PASSWORD:-cobranza_redis_2024}@redis:6379
-      
-      # Configuración del servidor
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379
       NODE_ENV: production
       PORT: 3000
-      
-      # JWT
-      JWT_SECRET: ${JWT_SECRET:-tu_jwt_secret_muy_seguro_2024_cobranza}
-      
-      # Email (Gmail)
-      EMAIL_USER: ${EMAIL_USER}
-      EMAIL_PASS: ${EMAIL_PASS}
-      
-      # Twilio (SMS y WhatsApp)
-      TWILIO_SID: ${TWILIO_SID}
-      TWILIO_TOKEN: ${TWILIO_TOKEN}
-      TWILIO_PHONE: ${TWILIO_PHONE}
-      TWILIO_WHATSAPP: ${TWILIO_WHATSAPP}
-      
-      # OpenAI
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      
-      # WhatsApp Business (opcional)
-      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
-      WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID}
-      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
-      
-      # Frontend URL
+      JWT_SECRET: ${JWT_SECRET:-jwt_secret_default_change_this}
+      EMAIL_USER: ${EMAIL_USER:-tu_email@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-tu_app_password}
+      TWILIO_SID: ${TWILIO_SID:-ACxxxxxxxxxxxxxxxxxxxxxxx}
+      TWILIO_TOKEN: ${TWILIO_TOKEN:-tu_twilio_token}
+      TWILIO_PHONE: ${TWILIO_PHONE:-+1234567890}
+      TWILIO_WHATSAPP: ${TWILIO_WHATSAPP:-+14155238886}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-xxxxxxxxxxxxxxxxxxxxxxx}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
-      
-      # Configuración de logs
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      
-      # Rate limiting
-      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-15}
-      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
-    
     volumes:
+      - ./app:/app
       - ./logs:/app/logs
-      - ./uploads:/app/uploads
-    
     networks:
       - cobranza-network
-    
     depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    
+      - mongodb
+      - redis
+    command: >
+      sh -c "
+        echo '🚀 Iniciando instalación de dependencias...' &&
+        npm install express@4.18.2 mongoose@7.6.3 cors@2.8.5 bcryptjs@2.4.3 jsonwebtoken@9.0.2 nodemailer@6.9.7 twilio@4.19.0 dotenv@16.3.1 helmet@7.1.0 express-rate-limit@7.1.5 joi@17.11.0 moment@2.29.4 openai@4.20.1 axios@1.6.0 &&
+        echo '✅ Dependencias instaladas' &&
+        echo '🌐 Iniciando servidor...' &&
+        node server.js
+      "
     healthcheck:
-      test: ["CMD", "node", "healthcheck.js"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
 
-  # Nginx Reverse Proxy (opcional, para SSL y load balancing)
   nginx:
     image: nginx:alpine
     container_name: cobranza-nginx
@@ -121,47 +93,39 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./logs/nginx:/var/log/nginx
     networks:
       - cobranza-network
     depends_on:
       - cobranza-backend
-
-  # MongoDB Express para administración de BD (opcional, solo desarrollo)
-  mongo-express:
-    image: mongo-express:latest
-    container_name: cobranza-mongo-express
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-cobranza_admin_2024}
-      ME_CONFIG_MONGODB_URL: mongodb://admin:${MONGO_ROOT_PASSWORD:-cobranza_admin_2024}@mongodb:27017/
-      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-admin}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASS:-admin123}
-    networks:
-      - cobranza-network
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    profiles:
-      - development
+    command: >
+      sh -c "
+        echo 'events { worker_connections 1024; }
+        http {
+          upstream backend { server cobranza-backend:3000; }
+          server {
+            listen 80;
+            server_name localhost;
+            location / {
+              proxy_pass http://backend;
+              proxy_set_header Host \$$host;
+              proxy_set_header X-Real-IP \$$remote_addr;
+              proxy_set_header X-Forwarded-For \$$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$$scheme;
+            }
+            location /health { proxy_pass http://backend/api/health; }
+          }
+        }' > /etc/nginx/nginx.conf &&
+        nginx -g 'daemon off;'
+      "
 
 volumes:
   mongodb_data:
     driver: local
   mongodb_config:
-    driver: local
+    driver: local  
   redis_data:
     driver: local
 
 networks:
   cobranza-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
