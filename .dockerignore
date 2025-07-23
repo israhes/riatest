@@ -1,0 +1,69 @@
+# .dockerignore - Archivos y carpetas a excluir del build de Docker
+
+# Dependencias de Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de desarrollo
+.env.example
+.env.local
+.env.development
+.env.test
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Documentación
+README.md
+PORTAINER-SETUP.md
+*.md
+
+# Logs
+logs/
+*.log
+
+# Archivos temporales
+tmp/
+temp/
+
+# Archivos de backup
+*.backup
+*.bak
+
+# Archivos de test
+test/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+
+# Archivos de build
+dist/
+build/
+
+# Certificados SSL (se montan como volúmenes)
+nginx/ssl/
+certs/
+
+# Archivos de configuración local
+.env.docker
+.env.production.local
